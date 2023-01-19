@@ -1,22 +1,7 @@
-
-
-
-
-import numpy as np
-import pandas as pd
-from pyspark.sql.types import *
-import pandas as pd
-
-from pyspark.sql.functions import pandas_udf
-from pyspark.sql.functions import PandasUDFType
-import mplfinance as mpf
-from pyspark.sql.functions import explode
-from scipy.ndimage import gaussian_filter
 from datetime import datetime
 
 
-from delta.tables import *
-import random
+from scode.database import *
 
 
 def add_feature3(func, column_name, delta_path):
@@ -29,12 +14,9 @@ def add_feature3(func, column_name, delta_path):
         appName('my-demo-spark-job2'). \
         getOrCreate()
 
-    spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
-    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
-
 
     deltaTable = DeltaTable.forPath(spark, delta_path)
-    df = spark.read.format("delta").load(delta_path)
+    df = spark.read.format("database").load(delta_path)
 
     @pandas_udf(f"Timestamp long, {column_name} double", PandasUDFType.GROUPED_MAP)
     def add_feature_udf(pdf):
@@ -82,11 +64,11 @@ def pattern_search2(func, column_name, delta_path):
         getOrCreate()
 
     spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
-    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+    spark.conf.set("spark.databricks.database.schema.autoMerge.enabled", "true")
 
 
     deltaTable = DeltaTable.forPath(spark, delta_path)
-    df = spark.read.format("delta").load(delta_path)
+    df = spark.read.format("database").load(delta_path)
 
     @pandas_udf(f"start long, end long", PandasUDFType.GROUPED_MAP)
     def add_feature_udf(pdf):
@@ -107,7 +89,6 @@ def pattern_search2(func, column_name, delta_path):
                     items.append({'start':  pdf.iloc[count-40, :]['Timestamp'],
                                   'end':  pdf.iloc[count, :]['Timestamp']})
                     count += 40
-        
             count += 1
             
         return pd.DataFrame.from_records(items)

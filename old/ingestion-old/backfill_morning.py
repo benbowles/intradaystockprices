@@ -1,11 +1,11 @@
-from imports import *
+from scode.imports import *
 from deltahelper import *
 import load_db
 
 
 @lru_cache(maxsize=32)
 def get_schedule(enddate=str(dt.datetime.now().date())):
-    import imports
+    from scode import imports
     nyse = mcal.get_calendar('NYSE')
     schedule = nyse.schedule(start_date=imports.START_TIME, end_date=enddate)
     return schedule
@@ -34,12 +34,9 @@ def backfill_opentime_forticker(ticker, d, verbose=True):
         date_existing_df = tickerdf[tickerdf['Date'] == date]
         
         if len(date_existing_df) == 0:
-            if verbose:
-                print(f"There was no data for {ticker} aon {date}, ...")
-                continue
+            continue
         
-        seconds = set(opening_seconds_for_day(date))
-        if validate_need_backfill(date_existing_df, date):
+        if already_have_morning_data(date_existing_df, date):
             continue
         print(f"Adding data for {ticker} aon {date}, ...")
         
@@ -51,7 +48,7 @@ def backfill_opentime_forticker(ticker, d, verbose=True):
         if verbose:
             print(f"Len Data after cleaning {len(final_df)} : {ticker}")
         mega_df.append(final_df) 
-        if len(mega_df) > (10 if start else 2000):
+        if len(mega_df) > (10 if start else 300):
             print(f"Writing megadf morningg recods with len {len(mega_df)} dates of total dates {len(d.items())}")
             add_to_db(get_spark().createDataFrame(pd.concat(mega_df)), get_delta_spark())
             print("Finished writing records")
@@ -63,7 +60,7 @@ def backfill_opentime_forticker(ticker, d, verbose=True):
         add_to_db(get_spark().createDataFrame(pd.concat(mega_df)), get_delta_spark())
             
 
-def validate_need_backfill(datedf, date):
+def already_have_morning_data(datedf, date):
     seconds = set(opening_seconds_for_day(date))
     return len(set(datedf['Timestamp'].tolist()) & seconds) >= 30
 
@@ -101,19 +98,33 @@ def backfill_opentime(verbose=True):
 
 
         
-def backfill_from_cache():
+def backfill_from_cache(mod1, mod2):
     daydict = get_days_dict()
     from load_db import create_cleaned_df
     mega_df = []
     start = True
-    for f in glob.glob('cache/*')[10:]:
-
+    
+    existingdeltadf = get_delta_spark()
+    
+    ticker_paths = glob.glob('cache/*')
+    ticker_paths.sort()
+    for i, f in enumerate(ticker_paths):
+        if not '2012' in f:
+            continue
+            
+        ticker_name = f.replace('cache/', '').split('-')[0]
+        if not int(hashlib.sha1(ticker_name.encode("utf-8")).hexdigest(), 16) % (10 ** 8) % mod1 == mod2:
+            continue
+            
+            
         try:
-            if f.startswith("Ticker") or f.startswith("-") or 'QCOM' in f or 'SBUX' in f or 'PVH' in f :
-                continue
-
-            ticker_name = f.replace('cache/', '').split('-')[0]
-
+            # if f.startswith("Ticker") or f.startswith("-") or 'QCOM' in f or 'SBUX' in f or 'PVH' in f :
+            #     continue
+            
+            tickerdf = existingdeltadf.filter(f"ticker == '{ticker_name}'").select('*').toPandas()
+            date_to_count = dict(tickerdf.groupby('Date').count()["Datetime"])
+            
+            
             print("Starting " + ticker_name)
 
             df= pd.read_csv(f)
@@ -121,21 +132,33 @@ def backfill_from_cache():
             df['Date'] = df['Datetime'].apply(lambda x: str(x.date()))
             df['ticker'] = ticker_name
             for date in daydict.keys():
+                
+                if date_to_count.get(date) and date_to_count.get(date) > 140:
+                    continue
+                    
                 datedf = df[df["Date"] == date]
                 if len(datedf) > 0:
-                    restrictdf = datedf[(datedf['Timestamp'] >= daydict[date]) & (datedf['Timestamp'] <= (daydict[date] + 1800))]
-                    restrictdf = create_cleaned_df(restrictdf, withprogress=False, verbose=False)
-                    restrictdf['ticker'] = ticker_name
-                    mega_df.append(restrictdf)
+                    # restrictdf = datedf[(datedf['Timestamp'] >= daydict[date]) & (datedf['Timestamp'] <= (daydict[date] + 1800))]
+                    print('before', len(datedf), date, ticker_name)
+                    
+                    datedf_after = create_cleaned_df(datedf, withprogress=False, verbose=False)
+                    print('after', len(datedf_after), date, ticker_name)
+                    datedf_after['ticker'] = ticker_name
+                    
+                    # if len(datedf_after) < 390:
+                    #     datedf.to_csv(f'before_{ticker_name}_{date}')
+                    #     datedf_after.to_csv(f'after_{ticker_name}_{date}')
+                    
+                    mega_df.append(datedf_after)
 
-                if len(mega_df) > (10 if start else 3000):
-                    print(f"Writing megadf morningg recods with len {len(mega_df)} dates of total dates {len(daydict.items())}")
+                if len(mega_df) > (10 if start else 75):
+                    print(f"Writing megadf morning recods with len {len(mega_df)} dates of total dates {len(daydict.items())}")
                     add_to_db(get_spark().createDataFrame(pd.concat(mega_df)), get_delta_spark())
                     print("Finished writing records")
                     mega_df = []
                     start = False
 
-                if mega_df and len(mega_df) % 100 == 0:
+                if mega_df and len(mega_df) % 10 == 0:
                     print("mega df is " + str(len(mega_df)))
 
             if len(mega_df) > 0:

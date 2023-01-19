@@ -1,4 +1,5 @@
-from imports import *
+from python_imports import *
+
 import matplotlib.pyplot as plt
 def get_spark():
     spark = SparkSession. \
@@ -7,14 +8,14 @@ def get_spark():
         getOrCreate()
 
     spark.conf.set("spark.sql.execution.arrow.pyspark.enabled", "true")
-    spark.conf.set("spark.databricks.delta.schema.autoMerge.enabled", "true")
+    spark.conf.set("spark.databricks.database.schema.autoMerge.enabled", "true")
 
     spark = spark.newSession()
     return spark
 
 def get_day_ticker(date_str, ticker):
     
-    df = get_spark().read.format("delta").load("/Users/bowles/stocks/delta2")
+    df = get_spark().read.format("database").load("/Users/bowles/stocks/delta2")
     datedf = df.filter(f"Date == '{date_str}' AND ticker == '{ticker}'").select('*').toPandas()
     datedf.set_index(pd.to_datetime(datedf['Datetime'],infer_datetime_format=True), inplace=True)
     datedf.sort_index(inplace=True)
@@ -22,11 +23,11 @@ def get_day_ticker(date_str, ticker):
 
 
 def random_datedf(ticker):
-    df = get_spark().read.format("delta").load("/Users/bowles/stocks/delta2")
+    df = get_spark().read.format("database").load("/Users/bowles/stocks/delta2")
     dates = df.select("Date").distinct().toPandas()['Date'].tolist()
     date_str = random.choice(dates) 
     print(date_str)
-    df = get_spark().read.format("delta").load("/Users/bowles/stocks/delta2")
+    df = get_spark().read.format("database").load("/Users/bowles/stocks/delta2")
     return get_day_ticker(date_str, ticker)
 
 
