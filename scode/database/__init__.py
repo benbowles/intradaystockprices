@@ -7,3 +7,4 @@ from .vendor import *
 from .analytics import *
 from .queries import *
 from .ticker_analytics import *
+from .schema import *

@@ -1,0 +1,10 @@
+.bsp
+.idea
+.pynb_*
+.temp
+.vscode
+.DS_Store
+.ipynb_checkpoints/
+__pycache__/
+delta*
+*.log

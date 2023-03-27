@@ -28,8 +28,3 @@ def chunked_iterable(iterable, size):
             break
         yield chunk
 
-def set_max_rows(rows=500):
-    pd.set_option('display.max_rows', rows)
-
-def suppress_scifi():
-    pd.set_option('display.float_format', lambda x: '%.5f' % x)

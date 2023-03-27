@@ -1,17 +1,43 @@
 from ..imports import *
+from .schema import schema_out
 from .constants import DB_LOCATION
 from delta.tables import DeltaTable
-
+from pyspark.sql.functions import col
 
 def get_delta():
     spark = get_spark()
     return DeltaTable.forPath(spark, DB_LOCATION)
 
+def optimize():
+    get_delta().optimize().executeCompaction()
 
 def get_entire_spark_df():
     spark = get_spark()
     return spark.read.format("delta").load(DB_LOCATION)
 
+def get_entire_spark_df_sample():
+    spark = get_spark()
+    df = spark.read.format("delta").load(DB_LOCATION)
+    return df[df.ticker.isin(['GOOG', 'SBUX', 'ADBE', 'MSFT' , 'SPXS'])]
+
+
+def date_range(df, upper=None, lower=None):
+    if not lower:
+        lower = "2010-01-01"
+        
+    if not upper:
+        upper = "2025-01-01"
+        
+    dates = (lower, upper)
+    return df.where(col('Datetime').between(*dates))
+    
+    
+def compact_files():
+    delta_table = get_delta()
+    delta_table.optimize().executeCompaction()
+    get_spark().conf.set("spark.databricks.delta.retentionDurationCheck.enabled", "false")
+    delta_table.vacuum(0)
+    
 
 def delete_all_tickers():
     delta_obj = get_delta()
@@ -48,7 +74,7 @@ def get_spark():
     spark.conf.set("spark.sql.streaming.schemaInference", "true")
 
     spark.conf.set("spark.sql.catalog.spark_catalog", "org.apache.spark.sql.delta.catalog.DeltaCatalog")
-    spark.sparkContext.setLogLevel('WARN')
+    spark.sparkContext.setLogLevel('INFO')
 
     return spark
 
@@ -68,25 +94,32 @@ def repartition():
     df.write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true") \
         .partitionBy("ticker") \
-        .save("/Users/bowles/stocks/delta4")
+        .save("EXAMPLE")
 
 
 def drop_duplicates():
     df = get_entire_spark_df()
-    df.dropDuplicates("Timestamp", "ticker")
+    df = df.dropDuplicates(["Timestamp", "ticker"])
     df.write.format("delta").mode("overwrite") \
         .option("overwriteSchema", "true") \
         .partitionBy("ticker") \
         .save(DB_LOCATION)
 
-
 def write_new():
     spark = get_spark()
-    df = spark.read.format("delta").load(DB_LOCATION)
-    df.filter(f"ticker == 'blah'").select('*').write.format('delta') \
+    df = spark.createDataFrame([], schema=schema_out)
+    df.select('*').write.format('delta') \
         .mode("overwrite") \
         .option("overwriteSchema", "true") \
         .partitionBy("ticker") \
         .save(DB_LOCATION)
 
-# spark.sql(f"ALTER TABLE delta.`{scode.DB_LOCATION}` SET TBLPROPERTIES ('delta.targetFileSize'=104857600);")
+def delete_column(column_name):
+    spark = get_spark()
+    spark.sql(
+        f"""ALTER TABLE delta.`{DB_LOCATION}` SET TBLPROPERTIES (
+       'delta.columnMapping.mode' = 'name',
+       'delta.minReaderVersion' = '2',
+       'delta.minWriterVersion' = '5')"""
+    )
+    spark.sql(f"ALTER TABLE delta.`{DB_LOCATION}` DROP COLUMN {column_name}")

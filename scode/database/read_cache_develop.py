@@ -3,26 +3,7 @@ from . import helpers
 from . import constants
 
 MIN_ALLOWED_TS = 368
-import time
-from contextlib import contextmanager
 
-class Timer:
-    def __init__(self, name=None):
-        self.name = name
-        self.start_time = None
-        self.elapsed_time = None
-
-    def __enter__(self):
-        self.start_time = time.perf_counter()
-        return self
-
-    def __exit__(self, exc_type, exc_val, exc_tb):
-        self.elapsed_time = time.perf_counter() - self.start_time
-        if self.name:
-            print(f"Time taken for '{self.name}': {self.elapsed_time:.4f} seconds")
-        else:
-            print(f"Time taken: {self.elapsed_time:.4f} seconds")
-            
 def setup_dt_fields(df):
     df['Datetime'] = pd.to_datetime(df['Datetime'])
     df['Date'] = df['Datetime'].apply(lambda x: str(x.date()))
@@ -84,6 +65,38 @@ def determine_quality(datedf):
     return max_gap, missing_count
 
 
+def get_inter_details(int_column):
+    total_missing = int_column.sum()
+    max_so_far = 0
+    temp = 0
+
+    for item in int_column.tolist():
+        if item:
+            temp += 1
+            max_so_far = builtins.max(max_so_far, temp)
+        else:
+            temp = 0
+    return max_so_far, total_missing
+
+def get_n_missing_dates(df):
+    all_business_dates = set(helpers.business_dates())
+    found_dates = set(df['Date'].apply(lambda x: str(x)).tolist())
+
+    min_date = pd.to_datetime(df['Date']).min().date()
+    max_date = pd.to_datetime(df['Date']).max().date()
+
+    n_missing = 0
+    delta = max_date - min_date
+    n_dates_in_range = 0
+    for i in range(delta.days + 1):
+        day = str(min_date + timedelta(days=i))
+        if day in all_business_dates and day not in found_dates:
+            n_missing += 1
+        n_dates_in_range += 1
+
+    return str(min_date), str(max_date), n_missing, n_missing / n_dates_in_range
+
+
 def interpolate_mins(datedf):
     assert type(datedf.index) == pd.core.indexes.datetimes.DatetimeIndex
     datedf.sort_index(inplace=True)
@@ -130,15 +143,93 @@ def interpolate_mins(datedf):
                     new_row['interpolate'] = True
                     open_close.loc[ts[i - 1] + pd.Timedelta(minutes=min_i + 1)] = new_row
 
-
-    def convert_to_int(x):
-        try:
-            return int(x)
-        except (ValueError, TypeError):
-            return 0
-    
-    
     final = pd.concat([before_open, open_close, after_close])
     final = final.sort_index()
-    final['Volume'] = final['Volume'].apply(convert_to_int)
     return final
+
+
+import os.path
+import sys
+
+from ..imports import *
+from . import sparkdf
+from . import preprocessing
+from . import helpers
+from . import constants
+from .schema import schema_out, schema_in
+
+name_to_type = {
+    "Timestamp": int,
+    "Volume": int,
+    "Date": str,
+    "Datetime": pd._libs.tslibs.timestamps.Timestamp,
+    "ticker": str,
+    "Close": float,
+    "Close_o": float,
+    "Low": float,
+    "Low_o": float,
+    "High": float,
+    "High_o": float,
+    "Open": float,
+    "Open_o": float,
+    "interpolate": bool,
+}
+cols = [f.name for f in schema_out.fields]
+
+
+def validate_all(df):
+    def validate_return_df(df, column, obj_type):
+        return_vals = []
+        date = df["Date"].tolist()[0]
+        found = 0
+        for value in df[column].tolist():
+
+            if type(value) == obj_type:
+                return_vals.append(value)
+            else:
+                print(
+                    f"{date} had a problem for {column}, it was not equal to {obj_type} it was equal to {str(value)}"
+                )
+                return_vals.append(None)
+                found += 1
+        if found:
+            print(df[column])
+            print(f"{df['ticker'].tolist()[0]} : For column {column} and  {obj_type} there was {found} problems")
+        df[column] = return_vals
+        return df
+
+    for k, v in name_to_type.items():
+        df = validate_return_df(df, k, v)
+    return df
+
+
+def process_ticker_date(pdf):
+    from scode import clean_df, business_dates
+
+    dates = business_dates()
+
+    if str(pdf["Date"].tolist()[0]) not in dates:
+        print(f"{pdf['Date'].tolist()[0]} Date not in list...")
+        return pd.DataFrame(columns=cols)
+
+    pdf = pdf.sort_values(by="Timestamp")
+    assert len(set(pdf["Date"])), "Only one date allowed"
+    assert len(set(pdf["ticker"])), "Only one date allowed"
+
+    pdf_preprocessed = clean_df(pdf, withprogress=False)
+    pdf_preprocessed["Datetime"] = pdf_preprocessed.index
+    pdf_preprocessed["Datetime"] = pd.to_datetime(pdf_preprocessed["Datetime"])
+    pdf_preprocessed["Date"] = pdf_preprocessed["Datetime"].apply(
+        lambda x: str(x.date())
+    )
+
+    if type(pdf_preprocessed) == pd.DataFrame and len(pdf_preprocessed) > 0:
+        pdf_preprocessed = validate_all(pdf_preprocessed)
+        pdf_preprocessed["Datetime"] = pd.to_datetime(pdf_preprocessed["Datetime"])
+        to_return = pdf_preprocessed[cols]
+    else:
+        to_return = pd.DataFrame(columns=cols)
+    import random
+
+    return to_return
+

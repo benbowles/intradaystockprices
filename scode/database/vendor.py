@@ -111,7 +111,7 @@ def save_all_ticker_csvs(cache_folder, load_diff_only=True):
 def save_all_ticker_csvs_parallel(temp_folder='.temp/vendor/', load_diff_only=True) -> object:
     tickers = get_tickers()
     print(f"Starting with {len(tickers)} tickers")
-    with concurrent.futures.ThreadPoolExecutor(max_workers=12) as executor:
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         future_to_url = {executor.submit(handle_ticker, ticker, temp_folder, load_diff_only): ticker
                          for ticker in tickers}
         for future in concurrent.futures.as_completed(future_to_url):

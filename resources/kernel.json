@@ -1,0 +1,18 @@
+{
+      "argv": [
+        "python",
+        "-m",
+        "ipykernel_launcher",
+        "-f",
+        "{connection_file}"
+      ],
+      "display_name": "Pyspark 3",
+      "language": "python",
+      "env": {
+        "PYSPARK_PYTHON": "/Users/bowles/opt/anaconda3/bin/python3",
+        "SPARK_HOME": "/Users/bowles/spark-3.3.1-bin-hadoop3",
+        "PYSPARK_SUBMIT_ARGS": "--master local[2] --driver-memory 15g --packages io.delta:delta-core_2.12:2.1.1 pyspark-shell",
+        "SPARK_OPTS": "--conf spark.ui.port=0  --conf spark.sql.extensions=io.delta.sql.DeltaSparkSessionExtension --conf spark.sql.catalog.spark_catalog=org.apache.spark.sql.delta.catalog.DeltaCatalog",
+        "PYTHONPATH": "/Users/bowles/spark-3.3.1-bin-hadoop3/python/lib/py4j-0.10.9.5-src.zip"
+      }
+}

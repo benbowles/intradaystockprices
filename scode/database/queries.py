@@ -3,9 +3,14 @@ from .sparkdf import *
 from .constants import *
 from ..imports import *
 
-def random_datedf(ticker):
+@lru_cache(maxsize=32)
+def get_dates():
     df = get_entire_spark_df()
     dates = df.select("Date").distinct().toPandas()['Date'].tolist()
+    return dates
+
+def random_datedf(ticker):
+    dates = get_dates()
     date_str = random.choice(dates)
     return get_day_ticker(date_str, ticker)
 
